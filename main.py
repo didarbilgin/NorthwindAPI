@@ -1,108 +1,116 @@
-from sklearn.impute import SimpleImputer
-from sqlalchemy import create_engine, text  # text import edilmeli
 import pandas as pd
 import numpy as np
-# PostgreSQL bağlantı URL'si
-DATABASE_URL = "postgresql://postgres:Silasila.17@localhost:5432/GYK2Northwind"
+from sqlalchemy import create_engine, text
+from sqlalchemy.exc import SQLAlchemyError
 
-# Veritabanına bağlan
+# Database connection
+DATABASE_URL = "postgresql://postgres:Silasila.17@localhost:5432/GYK2Northwind"
 engine = create_engine(DATABASE_URL)
 
+def load_data(engine):
+    """Load all tables from database"""
+    tables = ['categories', 'customers', 'order_details', 'orders', 'products']
+    data = {}
+    
+    try:
+        with engine.connect() as connection:
+            for table in tables:
+                data[table] = pd.read_sql_table(table, connection)
+        print("Data loaded successfully")
+        return data
+    except SQLAlchemyError as e:
+        print(f"Database error: {e}")
+        return None
 
-# Bağlantıyı test et
-"""try:
-    with engine.connect() as connection:
-        result = connection.execute(text("SELECT * FROM customers"))  
-        for row in result:
-            print(row)
-except Exception as e:
-    print(f"Bağlantı hatası: {e}")
-"""
-""" Fonksiyonel Gereksinimler Northwind veritabanından veri çekilecek.
+def check_missing_data(data):
+    """Check for missing values in all DataFrames"""
+    print("\nMissing data check:")
+    for name, df in data.items():
+        print(f"{name}:")
+        print(df.isnull().sum())
+        print("*****")
 
-Gerekli veri ön işleme adımları yapılacak.-
-
-Ürün bazlı geçmiş satış verilerine göre tahmin modeli oluşturulacak.."""
-
-"""Orders
-
-Order_Details
-
-Products
-
-Customers
-
-Categories (opsiyonel)"""
-
-try:
-    with engine.connect() as connection:
-        query = text("SELECT * FROM orders")
-        df_orders = pd.read_sql(query, connection)
-
-        query = text("SELECT * FROM customers")
-        df_customers = pd.read_sql(query, connection)
-
-        query = text("SELECT * FROM order_details")
-        df_order_details=pd.read_sql(query, connection)
-
-        query = text("SELECT * FROM products")
-        df_products=pd.read_sql(query, connection)
-
-
-        query = text("SELECT * FROM categories")
-        df_categories=pd.read_sql(query, connection)
-
-
-        print(df_customers.head())
-        print("*****************")
-        print(df_products.head())
-        print("*****************")
-        print(df_categories.head())
-        print("*****************")
-        print(df_order_details.head())
+def clean_data(df):
+    """Clean a single DataFrame without chained assignment"""
+    df = df.copy()
+    
+    for col in df.columns:
+        # Handle text columns
+        if pd.api.types.is_string_dtype(df[col]) or pd.api.types.is_object_dtype(df[col]):
+            # Replace various null representations
+            df[col] = df[col].replace(['None', 'nan', 'NaN', 'NULL', 'none', ''], np.nan)
+            if df[col].isna().any():
+                mode_values = df[col].mode()
+                most_frequent = mode_values[0] if not mode_values.empty else ''
+                df.loc[:, col] = df[col].fillna(most_frequent)  # Fixed chained assignment
         
-except Exception as e:
-    print(f"Bağlantı hatası: {e}")
+        # Handle numeric columns
+        elif pd.api.types.is_numeric_dtype(df[col]):
+            df[col] = pd.to_numeric(df[col], errors='coerce')
+            if df[col].isna().any():
+                mean_val = df[col].mean()
+                df.loc[:, col] = df[col].fillna(mean_val)  # Fixed chained assignment
+    
+    return df
 
-# Eksik veri kontrolü
-print("Eksik veri kontrolü:")
-for df, name in zip([df_orders, df_categories, df_customers, df_products, df_order_details],
-                    ["orders", "categories", "customers", "products", "order_details"]):
-    print(f"{name}:")
-    print(df.isnull().sum())
-    print("*****")
+def update_database(engine, data):
+    """Update database tables safely"""
+    # Define update order based on foreign key dependencies
+    update_order = ['categories', 'products', 'customers', 'orders', 'order_details']
+    
+    try:
+        with engine.begin() as connection:
+            # Disable triggers temporarily to avoid constraint issues
+            connection.execute(text("SET session_replication_role = 'replica'"))
+            
+            for table in update_order:
+                # Get the DataFrame
+                df = data[table]
+                
+                # Clear existing data
+                connection.execute(text(f"TRUNCATE TABLE {table} CONTINUE IDENTITY CASCADE"))
+                
+                # Insert new data
+                df.to_sql(
+                    table,
+                    con=connection,
+                    if_exists='append',
+                    index=False,
+                    chunksize=1000
+                )
+                print(f"{table} table updated successfully")
+            
+            # Re-enable triggers and constraints
+            connection.execute(text("SET session_replication_role = 'origin'"))
+            
+    except SQLAlchemyError as e:
+        print(f"Database update failed: {e}")
+        return False
+    return True
 
-# Eksik ship_region verilerini en sık görülen değerle doldur
-if 'ship_region' in df_orders.columns:
-    df_orders['ship_region'].replace(to_replace=[None], value=np.nan, inplace=True)
-    imputer = SimpleImputer(strategy='most_frequent')
-    df_orders[['ship_region']] = imputer.fit_transform(df_orders[['ship_region']])
+def main():
+    # 1. Load data
+    data = load_data(engine)
+    if data is None:
+        return
+    
+    # 2. Check initial data quality
+    check_missing_data(data)
+    
+    # 3. Clean data
+    for name in data:
+        data[name] = clean_data(data[name])
+    
+    # 4. Verify cleaning
+    print("\nAfter cleaning - missing values check:")
+    check_missing_data(data)
+    
+    # 5. Update database
+    if update_database(engine, data):
+        print("\nDatabase update completed successfully!")
+    else:
+        print("\nDatabase update failed")
 
-# Orders tablosundaki verileri güvenli bir şekilde güncelleme
-from sqlalchemy.exc import IntegrityError
-
-try:
-    with engine.begin() as connection:  # begin() otomatik transaction yönetimi sağlar
-        # 1. Önce foreign key constraint'i geçici olarak devre dışı bırak
-        connection.execute(text("ALTER TABLE order_details DROP CONSTRAINT IF EXISTS fk_order_details_orders"))
-        
-        # 2. Orders tablosunu truncate et (DELETE yerine daha verimli)
-        connection.execute(text("TRUNCATE TABLE orders RESTART IDENTITY CASCADE"))
-        
-        # 3. Yeni verileri ekle
-        df_orders.to_sql('orders', con=connection, if_exists='append', index=False)
-        
-        # 4. Foreign key constraint'i yeniden oluştur
-        connection.execute(text("""
-            ALTER TABLE order_details 
-            ADD CONSTRAINT fk_order_details_orders 
-            FOREIGN KEY (order_id) REFERENCES orders(order_id) 
-            ON DELETE CASCADE
-        """))
-        print("\nOrders tablosu veritabanına başarıyla kaydedildi!")
-        
-except IntegrityError as e:
-    print(f"Referans bütünlüğü hatası: {e}")
-    # Rollback otomatik olarak yapılacak
-except Exception as e:
-    print(f"Diğer veri güncelleme hatası: {e}")
+if __name__ == "__main__":
+    main()
+    engine.dispose()
