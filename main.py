@@ -3,11 +3,10 @@ from sqlalchemy import create_engine, text  # text import edilmeli
 import pandas as pd
 import numpy as np
 # PostgreSQL bağlantı URL'si
-DATABASE_URL = "postgresql://postgres:postgres@localhost:5432/GYK2-Northwind"  
+DATABASE_URL = "postgresql://postgres:Silasila.17@localhost:5432/GYK2Northwind"
 
 # Veritabanına bağlan
 engine = create_engine(DATABASE_URL)
-
 
 
 # Bağlantıyı test et
@@ -65,26 +64,45 @@ try:
 except Exception as e:
     print(f"Bağlantı hatası: {e}")
 
-#null veri kontrol etme işlemi 
-print(df_order_details.isnull().sum())
-print("*****")
-print(df_categories.isnull().sum())
-print("*****")
-print(df_customers.isnull().sum())
-print("*****")
-print(df_products.isnull().sum())
-print("*****")
-print(df_orders.isnull().sum())
+# Eksik veri kontrolü
+print("Eksik veri kontrolü:")
+for df, name in zip([df_orders, df_categories, df_customers, df_products, df_order_details],
+                    ["orders", "categories", "customers", "products", "order_details"]):
+    print(f"{name}:")
+    print(df.isnull().sum())
+    print("*****")
 
+# Eksik ship_region verilerini en sık görülen değerle doldur
+if 'ship_region' in df_orders.columns:
+    df_orders['ship_region'].replace(to_replace=[None], value=np.nan, inplace=True)
+    imputer = SimpleImputer(strategy='most_frequent')
+    df_orders[['ship_region']] = imputer.fit_transform(df_orders[['ship_region']])
 
-#STRING DEGERLERİ DOLDURMA İŞLEMİ "EN ÇOK" VERİYE GÖRE
+# Orders tablosundaki verileri güvenli bir şekilde güncelleme
+from sqlalchemy.exc import IntegrityError
 
-df_orders['ship_region'].replace(to_replace=[None], value=np.nan, inplace=True)
-imputer = SimpleImputer(strategy='most_frequent')
-df_orders[['ship_region']] = imputer.fit_transform(df_orders[['ship_region']])
-print(df_orders)
-# Yeni verileri mevcut tabloya eklemek için 'append' kullanabilirsiniz
-#df_cleaned = pd.DataFrame(df_orders, columns=df_orders.columns)
-df_orders.to_sql('orders', con=engine, if_exists='replace', index=False)
-
-print("\nOrders tablosu veritabanına başarıyla kaydedildi!")
+try:
+    with engine.begin() as connection:  # begin() otomatik transaction yönetimi sağlar
+        # 1. Önce foreign key constraint'i geçici olarak devre dışı bırak
+        connection.execute(text("ALTER TABLE order_details DROP CONSTRAINT IF EXISTS fk_order_details_orders"))
+        
+        # 2. Orders tablosunu truncate et (DELETE yerine daha verimli)
+        connection.execute(text("TRUNCATE TABLE orders RESTART IDENTITY CASCADE"))
+        
+        # 3. Yeni verileri ekle
+        df_orders.to_sql('orders', con=connection, if_exists='append', index=False)
+        
+        # 4. Foreign key constraint'i yeniden oluştur
+        connection.execute(text("""
+            ALTER TABLE order_details 
+            ADD CONSTRAINT fk_order_details_orders 
+            FOREIGN KEY (order_id) REFERENCES orders(order_id) 
+            ON DELETE CASCADE
+        """))
+        print("\nOrders tablosu veritabanına başarıyla kaydedildi!")
+        
+except IntegrityError as e:
+    print(f"Referans bütünlüğü hatası: {e}")
+    # Rollback otomatik olarak yapılacak
+except Exception as e:
+    print(f"Diğer veri güncelleme hatası: {e}")
