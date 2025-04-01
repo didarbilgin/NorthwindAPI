@@ -1,0 +1,1 @@
+"""API uç noktalarını oluşturmak için FastAPI kullanılacak. Bu dosya, ürün listeleme, tahmin yapma ve model eğitme gibi işlevleri sağlayacak."""
