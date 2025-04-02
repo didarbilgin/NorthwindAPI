@@ -22,55 +22,34 @@ from database import engine
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score 
 from sqlalchemy import create_engine, text
+import seaborn as sns
+import matplotlib.pyplot as plt
+import plotly.express as px
 
 from database import fetch_data, check_missing_values, update_database ,engine
-"""query = text("SELECT * FROM orders")
+
+
+query = text("""SELECT o.order_id,c.customer_id, o.order_date ,c.country, p.product_id, p.product_name , od.quantity, od.discount, od.unit_price, p.units_in_stock  FROM orders o 
+inner join order_details od 
+on o.order_id = od.order_id 
+inner join customers c
+on o.customer_id = c.customer_id
+inner join products p 
+on od.product_id = p.product_id """)
 df= pd.read_sql(query, engine.connect())
-"""
-"""
+
+
 df['order_date'] = pd.to_datetime(df['order_date'])  # Tarih formatına çevir
-df['year'] = df['order_date'].dt.year   # Yıl sütunu
+#df['year'] = df['order_date'].dt.year   # Yıl sütunu
 df['month'] = df['order_date'].dt.month # Ay sütunu
-df['day'] = df['order_date'].dt.day     # Gün sütunu
-df['day_of_week'] = df['order_date'].dt.weekday  # Haftanın günü (0 = Pazartesi, 6 = Pazar)
-"""
+#df['day'] = df['order_date'].dt.day     # Gün sütunu
+#df['day_of_week'] = df['order_date'].dt.weekday  # Haftanın günü (0 = Pazartesi, 6 = Pazar)
+
+
 #print(df['year'])
 
 
-""" 
-! postgreSQL sorgusu :
-select o.customer_id, sum (od.unit_price*od.quantity) as totalSales from orders o
-inner join order_details od on od.order_id=o.order_id
-group by o.customer_id
-"""
-
-totalSales_query = """
-SELECT o.customer_id, 
-       SUM(od.unit_price * od.quantity) AS totalSales 
-FROM orders o
-INNER JOIN order_details od ON od.order_id = o.order_id
-GROUP BY o.customer_id;
-"""
-
-df_totalsales= pd.read_sql(totalSales_query,engine.connect())
-print(df_totalsales)
 
 # Müşterilerin toplam yıllık sipariş tutarını hesapla
 
-# B2B müşteri türüne göre segmentasyon yap
-def classify_b2b(sales):
-    if sales < 50000:
-        return "Small Business"
-    elif 50000 <= sales < 200000:
-        return "Mid-Sized Business"
-    else:
-        return "Enterprise"
-
-# !!!!!!segmentasyon degerleri değiştirilebilir!!!!!!
-# Segmentasyonu uygula
-df_totalsales['classify_b2b'] = df_totalsales['totalsales'].apply(classify_b2b)
-
 # Sonuçları göster
-print(df_totalsales.head())
-
-

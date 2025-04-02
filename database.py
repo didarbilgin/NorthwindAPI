@@ -11,7 +11,7 @@ import numpy as np
 
 
 # PostgreSQL bağlantısını oluşturur.
-DATABASE_URL = "postgresql://postgres:postgres@localhost:5432/GYK2-Northwind"
+DATABASE_URL = "postgresql://postgres:772230@localhost:5432/gyk2northwind"
 engine = create_engine(DATABASE_URL)
 
 # Verilen SQL sorgusunu çalıştırır ve sonucu bir DataFrame olarak döndürür.
