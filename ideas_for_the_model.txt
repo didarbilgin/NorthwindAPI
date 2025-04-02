@@ -1,0 +1,148 @@
+"""Makine öğrenmesi modeli burada eğitilecek ve kaydedilecektir."""
+"""  Makine Öğrenmesi Modeli
+        1.	Hedef değişken belirlenecek (örneğin: ürün bazlı satış miktarı).
+        2.	Eğitim ve test verisinin hazırlanması (train_test_split).
+        3.	Model seçimi yapılacak.
+        4.	Modelin eğitilmesi ve test edilmesi.
+        5.	Model başarım metriklerinin raporlanması (R2, RMSE, vb.).
+        6.	Eğitilmiş modelin .pkl veya benzeri formatta kaydedilmesi.
+"""
+"""yapılacaklar :
+    1.veriyi yükleme 
+    2.hedef değişkenleri belirleme : bağımlı ve bağımsız değişkenler
+    3.veri setini train ve test değerlerine ayırma 
+    4.model seç ve eğit 
+    5.model performansını değerlendirme
+"""
+
+#ay bazlı satış miktarı
+
+# ************************** TOPLANTIDA KONUŞULANLAR ***********************************************
+
+""" 
+ML sirasında maliyet azaltma :
+mevsime bağlı yemekler
+    sipariş teslim süresini bulup 1 sütuna indirebiliriz ->  satıcı firması önermek için.
+
+    Fiyat ve miktar → Toplam Satış = UnitPrice * Quantity
+    order_details tablosunda var
+
+    Sipariş tarihi ve teslim tarihi → Teslimat Süresi = ShippedDate - OrderDate
+
+"""
+""" indirim miktarı ve satılan ürün sayısı ile bağlantı bakılabilir : indirim oranına göre satış artmış mı azalmış mı"""
+
+"""KORELASYON : hangi verilere bakılacak araştır ! :* sipariş tarihi - yemek * olabiliyor mu bak
+                                                   * yemek - ülke  *
+                                                    
+"""
+""" city - country gruplandırması yap 
+
+    Toplam Satıs=UnitPrice x Quantity×(1−Discount)
+
+"""
+
+""" !!!!!!!!!!!!!!!!!- ASIL MODEL -!!!!!!!!!!!!!!!!!!!!!!
+    SATICI 
+
+    CUSTOMERs tablosu  
+
+    Fiyat ve miktar → Toplam Satış = UnitPrice * Quantity  :  işletmelerin harcamaları bulmanın amacı -> işletmenin bize ne kadar gelir getirdiğini sağlamak
+    |
+    order_details tablosunda var
+
+
+    Sipariş tarihi ve teslim tarihi → Teslimat Süresi = ShippedDate - OrderDate amaç -> hangi kargo firması ile çalışabilir 
+
+    alıcıya alışverişine göre tavsiyede bulunma ,
+
+
+    alıcıları sınıflandırma :
+Evet, eğer sadece B2B müşterilerin varsa, segmentasyonu sadece B2B olarak belirleyebilirsin. Ancak, farklı B2B müşteri türleri oluşturabilirsin. Örneğin:
+
+✅ Küçük İşletmeler (Small Business) → Yılda X TL altında sipariş verenler
+✅ Orta Ölçekli İşletmeler (Mid-Sized Business) → Yılda X - Y TL arasında sipariş verenler
+✅ Büyük Kurumsal Müşteriler (Enterprise) → Yılda Y TL üstü sipariş verenler
+
+
+
+
+"""
+
+query = text("SELECT * FROM orders")
+df= pd.read_sql(query, engine.connect())
+
+
+df['order_date'] = pd.to_datetime(df['order_date'])  # Tarih formatına çevir
+df['year'] = df['order_date'].dt.year   # Yıl sütunu
+df['month'] = df['order_date'].dt.month # Ay sütunu
+df['day'] = df['order_date'].dt.day     # Gün sütunu
+df['day_of_week'] = df['order_date'].dt.weekday  # Haftanın günü (0 = Pazartesi, 6 = Pazar)
+
+print(df['year'])
+
+"""Önerilen Özellikler (Features):
+ Tarih Bilgisi:  Sipariş tarihinden Yıl ve Ay bilgilerini çıkart.
+ Toplam Satış Miktarı:  Miktar (Quantity) × Fiyat (UnitPrice) hesaplamasıyla aylık satış toplamlarını belirle.
+ Mevsimsel Etki:  Satışların mevsimsel etkisini görmek için Ay (1-12) ve Mevsim (Winter, Summer, etc.) ekleyebilirsin.
+ 
+ Özel Günler: Tatil dönemleri veya indirim sezonlarını belirlemek için Black Friday, Yılbaşı gibi bilgiler eklenebilir.
+
+"""
+
+"""
+alıcıları sınıflandırma :
+Evet, eğer sadece B2B müşterilerin varsa, segmentasyonu sadece B2B olarak belirleyebilirsin. Ancak, farklı B2B müşteri türleri oluşturabilirsin. Örneğin:
+
+✅ Küçük İşletmeler (Small Business) → Yılda X TL altında sipariş verenler
+✅ Orta Ölçekli İşletmeler (Mid-Sized Business) → Yılda X - Y TL arasında sipariş verenler
+✅ Büyük Kurumsal Müşteriler (Enterprise) → Yılda Y TL üstü sipariş verenler
+
+
+"""
+
+# Müşterilerin toplam yıllık sipariş tutarını hesapla
+customer_sales = df.groupby('CustomerID')['TotalSales'].sum().reset_index()
+
+# B2B müşteri türüne göre segmentasyon yap
+def classify_b2b(sales):
+    if sales < 50000:
+        return "Small Business"
+    elif 50000 <= sales < 200000:
+        return "Mid-Sized Business"
+    else:
+        return "Enterprise"
+
+# Segmentasyonu uygula
+customer_sales['B2B_Segment'] = customer_sales['TotalSales'].apply(classify_b2b)
+
+# Sonuçları göster
+print(customer_sales.head())
+
+
+"""SON HAL :
+Maliyet Azaltma & Sipariş Optimizasyonu (Regression Model)
+Model Türü: Lineer Regresyon veya Random Forest Regressor
+Amaç:
+
+Mevsime bağlı yemek tercihlerini analiz edip maliyetleri düşürmek
+
+Sipariş teslim süresini tahmin edip optimizasyon yapmak
+
+İndirim oranının satışa etkisini ölçmek
+
+Önerilen Özellikler (Features):
+
+Mevsim (Season)
+
+Yemek Türü (Product Category)
+
+Sipariş Tarihi (Order Date)
+
+Teslimat Süresi (Delivery Time = ShippedDate - OrderDate)
+
+İndirim Oranı (Discount)
+
+Toplam Satış (UnitPrice * Quantity * (1-Discount))
+
+Bu model, fiyatlandırma ve stok yönetimi gibi kararlar için kullanılabilir."""
