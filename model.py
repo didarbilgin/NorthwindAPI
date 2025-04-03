@@ -15,6 +15,8 @@ from sklearn.metrics import mean_squared_error, r2_score
 from database import fetch_data, check_missing_values, update_database ,engine
 from sklearn.preprocessing import StandardScaler
 scaler = StandardScaler()
+import pickle
+
 
 query = text("""SELECT o.order_id,c.customer_id, o.order_date ,c.country, p.product_id, p.product_name , od.quantity, od.discount, od.unit_price, p.units_in_stock  FROM orders o 
 inner join order_details od 
@@ -31,13 +33,13 @@ df['month'] = df['order_date'].dt.month # Ay sütunu
 
 def get_season(month):
     if month in [12, 1, 2]:
-        return 'Kış'
+        return 'Winter'
     elif month in [3, 4, 5]:
-        return 'İlkbahar'
+        return 'Spring'
     elif month in [6, 7, 8]:
-        return 'Yaz'
+        return 'Summer'
     else:
-        return 'Sonbahar'
+        return 'Autumn'
 
 df["season"] = df["month"].apply(get_season)
 
@@ -98,4 +100,10 @@ stacking_model.fit(X_train, y_train)
 y_pred_stacking = stacking_model.predict(X_test)
 evaluate_model(y_test, y_pred_stacking, "Stacking Model")
 
+
+with open("stacking_model.pkl", "wb") as model_file:
+        pickle.dump(stacking_model, model_file)
+
+with open("scaler.pkl", "wb") as scaler_file:
+        pickle.dump(scaler, scaler_file)
 
