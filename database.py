@@ -1,7 +1,6 @@
 import pandas as pd
 from sqlalchemy import create_engine, text
 from sqlalchemy.exc import SQLAlchemyError
-
 from sqlalchemy import create_engine, text
 import pandas as pd
 import numpy as np
@@ -11,7 +10,7 @@ import numpy as np
 
 
 # PostgreSQL bağlantısını oluşturur.
-DATABASE_URL = "postgresql://postgres:772230@localhost:5432/gyk2northwind"
+DATABASE_URL = "postgresql://postgres:271003@localhost:5432/gyk2northwind"
 engine = create_engine(DATABASE_URL)
 
 # Verilen SQL sorgusunu çalıştırır ve sonucu bir DataFrame olarak döndürür.
