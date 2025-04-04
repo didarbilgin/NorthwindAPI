@@ -63,6 +63,10 @@ scaler = StandardScaler()
 X_train_scaled = scaler.fit_transform(X_train)
 X_test_scaled = scaler.transform(X_test)
 
+
+
+"""
+
 xgb_model = xgb.XGBRegressor(objective="reg:squarederror", n_estimators=100, learning_rate=0.1)
 xgb_model.fit(X_train, y_train)
 y_pred_xgb = xgb_model.predict(X_test)
@@ -107,3 +111,4 @@ with open("stacking_model.pkl", "wb") as model_file:
 with open("scaler.pkl", "wb") as scaler_file:
         pickle.dump(scaler, scaler_file)
 
+"""
