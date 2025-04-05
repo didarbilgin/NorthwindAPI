@@ -1,35 +1,55 @@
 import pandas as pd
 import numpy as np
-from sklearn.neighbors import KNeighborsClassifier
-from database import engine
-import xgboost as xgb
-from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
-from sklearn.ensemble import StackingRegressor
+from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import accuracy_score 
-from sqlalchemy import create_engine, text
-import seaborn as sns
+from sklearn.preprocessing import LabelEncoder
+from sklearn.metrics import accuracy_score, classification_report, confusion_matrix, ConfusionMatrixDisplay
 import matplotlib.pyplot as plt
-import plotly.express as px
-from sklearn.metrics import mean_squared_error, r2_score
-from database import fetch_data, check_missing_values, update_database ,engine
-from sklearn.preprocessing import StandardScaler
-scaler = StandardScaler()
 import pickle
+from sqlalchemy import create_engine, select, text
+from sqlalchemy.orm import Session
+from database import engine
+
+# 1. Veri Yükleme
+def load_data():
+    query = text("""
+SELECT 
+    o.order_id,
+    o.order_date,
+    c.customer_id,
+    c.country,
+    p.product_id,
+    p.product_name,
+    p.units_in_stock,
+    cat.category_id,
+    cat.category_name,
+    od.quantity,
+    od.discount,
+    od.unit_price
+FROM orders o
+INNER JOIN order_details od ON o.order_id = od.order_id
+INNER JOIN customers c ON o.customer_id = c.customer_id
+INNER JOIN products p ON od.product_id = p.product_id
+INNER JOIN categories cat ON p.category_id = cat.category_id
+""")
+    return pd.read_sql(query, engine.connect())
+
+df = load_data()
 
 
-query = text("""SELECT o.order_id,c.customer_id, o.order_date ,c.country, p.product_id, p.product_name , od.quantity, od.discount, od.unit_price, p.units_in_stock  FROM orders o 
-inner join order_details od 
-on o.order_id = od.order_id 
-inner join customers c
-on o.customer_id = c.customer_id
-inner join products p 
-on od.product_id = p.product_id """)
-df= pd.read_sql(query, engine.connect())
 
+# 2. Özellik Mühendisliği
+def prepare_features(df):
+    df = df.copy()
+    
+    # Temel özellikler
+    df['total_price'] = df['unit_price'] * df['quantity']
+    df['discounted'] = (df['discount'] > 0).astype(int)
+    
+    return df
 
-df['order_date'] = pd.to_datetime(df['order_date'])  # Tarih formatına çevir
-df['month'] = df['order_date'].dt.month # Ay sütunu
+df['order_date'] = pd.to_datetime(df['order_date'])
+df['month'] = df['order_date'].dt.month
 
 def get_season(month):
     if month in [12, 1, 2]:
@@ -41,74 +61,72 @@ def get_season(month):
     else:
         return 'Autumn'
 
-df["season"] = df["month"].apply(get_season)
-
-def prepare_data(df):
-    df = df.copy()
-    # Yeni özellik oluştur: Total Sales
-    df["total_sales"] = df["unit_price"] * df["quantity"] * (1 - df["discount"])
-
-    # Gerekli sütunları seç
-    X = df[["month", "country","discount", "unit_price", "units_in_stock", "season","total_sales"]]
-    y = df["product_id"]
-
-    return X, y
-
-X, y = prepare_data(df)
-X_encoded = pd.get_dummies(X)
-
-X_train, X_test, y_train, y_test = train_test_split(X_encoded, y, test_size=0.2, random_state=42)
-
-scaler = StandardScaler()
-X_train_scaled = scaler.fit_transform(X_train)
-X_test_scaled = scaler.transform(X_test)
+df['season'] = df['month'].apply(get_season)
+df = prepare_features(df)
 
 
+# En popüler 10 ürünü seç
+top_products = df['product_id'].value_counts().nlargest(10).index
+df = df[df['product_id'].isin(top_products)]
 
-"""
+# Özellikler ve hedef
+features = [
+    'country', 'quantity', 'unit_price', 'discount', 
+    'total_price', 'discounted','season','category_id'
+]
 
-xgb_model = xgb.XGBRegressor(objective="reg:squarederror", n_estimators=100, learning_rate=0.1)
-xgb_model.fit(X_train, y_train)
-y_pred_xgb = xgb_model.predict(X_test)
+X = df[features]
+y = df['product_id']
 
+# Kategorik değişkenleri işle
+X = pd.get_dummies(X, columns=['country','season'])
 
-rf_model = RandomForestRegressor(n_estimators=100, random_state=42)
+# Label Encoding
+le = LabelEncoder()
+y_encoded = le.fit_transform(y)
+
+# 4. Model Kurma
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y_encoded, test_size=0.2, random_state=42, stratify=y_encoded)
+
+# Random Forest Modeli
+rf_model = RandomForestClassifier(
+    n_estimators=100,  # Daha az ağaç
+    max_depth=8,       # Daha sığ ağaçlar
+    random_state=42,
+    n_jobs=-1
+)
+
 rf_model.fit(X_train, y_train)
-y_pred_rf = rf_model.predict(X_test)
 
-gb_model = GradientBoostingRegressor(n_estimators=100, learning_rate=0.1, random_state=42)
-gb_model.fit(X_train, y_train)
-y_pred_gb = gb_model.predict(X_test)
+# 5. Değerlendirme
+y_pred = rf_model.predict(X_test)
 
-def evaluate_model(y_test, y_pred, model_name):
-    mse = mean_squared_error(y_test, y_pred)
-    r2 = r2_score(y_test, y_pred)
-    print(f"{model_name} Performansı:")
-    print(f"MSE: {mse:.4f}")
-    print(f"R²: {r2:.4f}\n{'-'*30}")
+print(f"Accuracy: {accuracy_score(y_test, y_pred):.4f}")
+print("\nClassification Report:")
+print(classification_report(y_test, y_pred, target_names=le.classes_.astype(str)))
 
-evaluate_model(y_test, y_pred_xgb, "XGBoost")
-evaluate_model(y_test, y_pred_rf, "Random Forest")
-evaluate_model(y_test, y_pred_gb, "Gradient Boosting")
+# Confusion Matrix
+plt.figure(figsize=(12, 10))
+disp = ConfusionMatrixDisplay.from_estimator(
+    rf_model,
+    X_test,
+    y_test,
+    display_labels=le.classes_,
+    xticks_rotation=90,
+    cmap=plt.cm.Blues,
+    normalize='true'
+)
+plt.title('Normalized Confusion Matrix')
+plt.tight_layout()
+plt.show()
 
-y_pred_ensemble = (y_pred_xgb  + y_pred_rf + y_pred_gb) / 3
-evaluate_model(y_test, y_pred_ensemble, "Ensemble (XGBoost + RF + GB)")
+# 6. Model Kaydetme
+with open("rf_product_model_simple.pkl", "wb") as f:
+    pickle.dump({
+        'model': rf_model,
+        'label_encoder': le,
+        'features': features
+    }, f)
 
-estimators = [
-    ('xgb', xgb_model),
-    ('rf', rf_model),
-    ('gb', gb_model)
-    ]
-stacking_model = StackingRegressor(estimators=estimators, final_estimator=RandomForestRegressor(n_estimators=100, random_state=42))
-stacking_model.fit(X_train, y_train)
-y_pred_stacking = stacking_model.predict(X_test)
-evaluate_model(y_test, y_pred_stacking, "Stacking Model")
-
-
-with open("stacking_model.pkl", "wb") as model_file:
-        pickle.dump(stacking_model, model_file)
-
-with open("scaler.pkl", "wb") as scaler_file:
-        pickle.dump(scaler, scaler_file)
-
-"""
+print("Basit model başarıyla kaydedildi!")
