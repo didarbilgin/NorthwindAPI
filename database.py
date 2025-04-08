@@ -9,7 +9,7 @@ import numpy as np
 # load_data update_database check_missing_data
 
 # Establish PostgreSQL database connection.
-DATABASE_URL = "postgresql://postgres:Silasila.17@localhost:5432/GYK2Northwind"
+DATABASE_URL = "postgresql://postgres:271003@localhost:5432/gyk2northwind"
 engine = create_engine(DATABASE_URL)
 
 # Executes the given SQL query and returns the result as a DataFrame.

@@ -11,7 +11,7 @@ def load_model(model_path):
 # Create sample data
 def create_sample_data():
     sample_data = {
-        'country': ['USA', 'USA', 'USA'],  # Country
+        'country': ['USA', 'Switzerland', 'France'],  # Country
         'quantity': [50, 6, 15],           # Quantity
         'unit_price': [100, 16.8, 16.8],   # Unit price
         'discount': [0.2, 0.05, 0.15],     # Discount
@@ -53,7 +53,7 @@ def predict_with_model(model_data, sample_df):
 # Main process
 def main():
     # Load the model
-    model_data = load_model("rf_product_model_simple.pkl")
+    model_data = load_model("rf_product_model.pkl")
     
     # Create sample data
     sample_df = create_sample_data()

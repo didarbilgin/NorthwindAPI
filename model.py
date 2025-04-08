@@ -10,7 +10,7 @@ from sqlalchemy import create_engine, select, text
 from sqlalchemy.orm import Session
 from database import engine
 
-# 1. Veri Yükleme
+# 1. Load Data
 def load_data():
     query = text("""
 SELECT 
@@ -36,13 +36,11 @@ INNER JOIN categories cat ON p.category_id = cat.category_id
 
 df = load_data()
 
-
-
-# 2. Özellik Mühendisliği
+# 2. Feature Engineering
 def prepare_features(df):
     df = df.copy()
     
-    # Temel özellikler
+    # Basic features
     df['total_price'] = df['unit_price'] * df['quantity']
     df['discounted'] = (df['discount'] > 0).astype(int)
     
@@ -64,12 +62,11 @@ def get_season(month):
 df['season'] = df['month'].apply(get_season)
 df = prepare_features(df)
 
-
-# En popüler 10 ürünü seç
+# Select top 10 most popular products
 top_products = df['product_id'].value_counts().nlargest(10).index
 df = df[df['product_id'].isin(top_products)]
 
-# Özellikler ve hedef
+# Features and target
 features = [
     'country', 'quantity', 'unit_price', 'discount', 
     'total_price', 'discounted','season','category_id'
@@ -78,28 +75,28 @@ features = [
 X = df[features]
 y = df['product_id']
 
-# Kategorik değişkenleri işle
+# Process categorical variables
 X = pd.get_dummies(X, columns=['country','season'])
 
 # Label Encoding
 le = LabelEncoder()
 y_encoded = le.fit_transform(y)
 
-# 4. Model Kurma
+# 4. Build Model
 X_train, X_test, y_train, y_test = train_test_split(
     X, y_encoded, test_size=0.2, random_state=42, stratify=y_encoded)
 
-# Random Forest Modeli
+# Random Forest Model
 rf_model = RandomForestClassifier(
-    n_estimators=100,  # Daha az ağaç
-    max_depth=8,       # Daha sığ ağaçlar
+    n_estimators=100,   # Fewer trees
+    max_depth=8,        # Shallower trees
     random_state=42,
     n_jobs=-1
 )
 
 rf_model.fit(X_train, y_train)
 
-# 5. Değerlendirme
+# 5. Evaluation
 y_pred = rf_model.predict(X_test)
 
 print(f"Accuracy: {accuracy_score(y_test, y_pred):.4f}")
@@ -121,12 +118,12 @@ plt.title('Normalized Confusion Matrix')
 plt.tight_layout()
 plt.show()
 
-# 6. Model Kaydetme
-with open("rf_product_model_simple.pkl", "wb") as f:
+# 6. Save the Model
+with open("rf_product_model.pkl", "wb") as f:
     pickle.dump({
         'model': rf_model,
         'label_encoder': le,
         'features': features
     }, f)
 
-print("Basit model başarıyla kaydedildi!")
+print("Simple model saved successfully!")

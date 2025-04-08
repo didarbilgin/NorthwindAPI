@@ -1,5 +1,5 @@
-"""API uç noktalarını oluşturmak için FastAPI kullanılacak. Bu dosya, ürün listeleme, tahmin yapma
-ve model eğitme gibi işlevleri sağlayacak."""
+"""FastAPI will be used to create API endpoints. 
+This file provides functionality such as listing products, making predictions, and training the model."""
 
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.responses import HTMLResponse
@@ -12,31 +12,30 @@ from pydantic import BaseModel
 from typing import List
 from contextlib import asynccontextmanager
 
-# --- Veritabanı ve Uygulama Yapılandırması ---
-DATABASE_URL = "postgresql://postgres:12345@localhost:5432/northwindapi"
+# --- Database and Application Configuration ---
+# PostgreSQL database connection string
+DATABASE_URL = "postgresql://postgres:271003@localhost:5432/gyk2northwind"
+
+# SQLAlchemy engine and session configuration
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
-# --- SQLAlchemy Modelleri ---
+# --- SQLAlchemy Models ---
 class ProductDB(Base):
     __tablename__ = "products"
-    id = Column(Integer, primary_key=True, index=True)
-    name = Column(String)
-    price = Column(Float)
-    stock = Column(Integer)
-    country = Column(String)
-    season = Column(String)
+    product_id = Column(Integer, primary_key=True, index=True)
+    product_name = Column(String)
+    unit_price = Column(Float)
+    units_in_stock = Column(Integer)
     category_id = Column(Integer)
 
-# --- Pydantic Modelleri ---
+# --- Pydantic Models ---
 class Product(BaseModel):
-    id: int
-    name: str
-    price: float
-    stock: int
-    country: str
-    season: str
+    product_id: int
+    product_name: str
+    unit_price: float
+    units_in_stock: int
     category_id: int
     
     class Config:
@@ -53,32 +52,32 @@ class ProductItem(BaseModel):
 class ProductItems(BaseModel):
     items: List[ProductItem]
 
-# --- Uygulama Yaşam Döngüsü ---
+# --- Application Lifespan ---
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Uygulama başlangıç/kapanış işlemleri"""
-    # Başlangıçta veritabanı bağlantısını test et
+    """Startup/shutdown operations for the application"""
+    # Test the database connection on startup
     try:
         db = SessionLocal()
         db.execute(text("SELECT 1"))
         db.close()
-        print("✓ PostgreSQL bağlantısı başarılı")
+        print("✓ PostgreSQL connection successful")
     except Exception as e:
-        print(f"✗ PostgreSQL bağlantı hatası: {e}")
+        print(f"✗ PostgreSQL connection error: {e}")
     
-    # Tabloları oluştur (sadece geliştirme ortamında)
+    # Create tables (only in development)
     Base.metadata.create_all(bind=engine)
     
     yield
     
-    # Kapanış işlemleri (opsiyonel)
-    print("Uygulama kapatılıyor...")
+    # Shutdown operations (optional)
+    print("Shutting down application...")
 
 app = FastAPI(lifespan=lifespan)
 
-# --- Yardımcı Fonksiyonlar ---
+# --- Helper Functions ---
 def get_db():
-    """Her istek için yeni bir veritabanı oturumu sağlar"""
+    """Provides a new database session for each request"""
     db = SessionLocal()
     try:
         yield db
@@ -86,20 +85,20 @@ def get_db():
         db.close()
 
 def prepare_sample_data(df: pd.DataFrame) -> pd.DataFrame:
-    """Gelen veriyi model için hazırlar"""
+    """Prepares incoming data for the model"""
     df = df.copy()
     df['total_price'] = df['unit_price'] * df['quantity']
     df['discounted'] = (df['discount'] > 0).astype(int)
     return df
 
-# --- Makine Öğrenmesi Modeli ---
+# --- Machine Learning Model ---
 try:
-    model_data = pickle.load(open("rf_product_model_simple.pkl", "rb"))
+    model_data = pickle.load(open("rf_product_model.pkl", "rb"))
 except Exception as e:
-    raise RuntimeError(f"Model yüklenemedi: {str(e)}")
+    raise RuntimeError(f"Model could not be loaded: {str(e)}")
 
 def predict_with_model(model_data: dict, sample_df: pd.DataFrame) -> list:
-    """Modelle tahmin yapar"""
+    """Make prediction with the model"""
     features = model_data['features']
     sample_df = sample_df[features]
     
@@ -113,26 +112,26 @@ def predict_with_model(model_data: dict, sample_df: pd.DataFrame) -> list:
     predictions = model_data['model'].predict(sample_df)
     return model_data['label_encoder'].inverse_transform(predictions).tolist()
 
-# --- API Endpointleri ---
+# --- API Endpoints ---
 @app.get("/", response_class=HTMLResponse)
 async def read_root():
-    """Ana sayfayı gösterir"""
+    """Displays the homepage"""
     return """
-    <h1>Ürün Yönetim API</h1>
+    <h1>Product Management API</h1>
     <ul>
-        <li><a href="/docs">API Dokümantasyonu</a></li>
-        <li><a href="/products">Ürün Listesi</a></li>
+        <li><a href="/docs">API Documentation</a></li>
+        <li><a href="/products">Product List</a></li>
     </ul>
     """
 
 @app.get("/products", response_model=List[Product])
 def get_products(db: Session = Depends(get_db)):
-    """Tüm ürünleri veritabanından getirir"""
+    """Retrieves all products from the database"""
     return db.query(ProductDB).all()
 
 @app.post("/predict")
 async def predict(items: ProductItems):
-    """Gelen veriye göre tahmin yapar"""
+    """Makes prediction based on incoming data"""
     try:
         df = pd.DataFrame([item.dict() for item in items.items])
         df = prepare_sample_data(df)
@@ -141,7 +140,23 @@ async def predict(items: ProductItems):
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-# --- Uygulama Başlatma ---
+# --- Application Launch ---
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app)
+    
+    
+'''
+To test the API with an example request:
+{
+  "items": [
+    {
+      "country": "Switzerland",
+      "quantity": 30,
+      "unit_price": 44.0,
+      "discount": 0,
+      "category_id": 4,
+      "season": "Summer"
+    }
+  ]
+}'''
